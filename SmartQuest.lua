@@ -13,7 +13,7 @@ Macro Commands:
 	/sq sound - Turns on/off sound
 
 ]]--
-
+local addonName, addon = ...
 SmartQuest = {
 	DefaultSetting = {
 		Sound = true;
@@ -57,27 +57,37 @@ SmartQuest = {
 	};
 	
 	Sound = { 
-		["objective"] = "Interface\\AddOns\\SmartQuest\\Sounds\\objective.ogg",
-		["objective_group"] = "Interface\\AddOns\\SmartQuest\\Sounds\\objective_group.ogg",
-		["item_group"] = "Interface\\AddOns\\SmartQuest\\Sounds\\item_group.ogg",
-		["item"] = "Interface\\AddOns\\SmartQuest\\Sounds\\item_you.ogg",
-		["quest_done"] = "Interface\\AddOns\\SmartQuest\\Sounds\\quest_done_all.ogg",
-		["quest_done_group"] = "Interface\\AddOns\\SmartQuest\\Sounds\\quest_done.ogg",
-		["quest_failed"] = "Interface\\AddOns\\SmartQuest\\Sounds\\quest_failed.ogg",
-		["quest_failed_group"] = "Interface\\AddOns\\SmartQuest\\Sounds\\quest_failed_group.ogg",
+		["objective"] = 6192, -- "Interface\\AddOns\\SmartQuest\\Sounds\\objective.ogg", -- peon ready to work
+		["objective_group"] = 6196, -- "Interface\\AddOns\\SmartQuest\\Sounds\\objective_group.ogg", -- peon something need doing
+		["item_group"] = 6194, -- "Interface\\AddOns\\SmartQuest\\Sounds\\item_group.ogg", -- peon hmm?
+		["item"] = 6197, -- "Interface\\AddOns\\SmartQuest\\Sounds\\item_you.ogg", -- Peon work work
+		["quest_done"] = 6199, -- "Interface\\AddOns\\SmartQuest\\Sounds\\quest_done_all.ogg", -- Peon Work Complete
+		["quest_done_group"] = 6294, -- "Interface\\AddOns\\SmartQuest\\Sounds\\quest_done.ogg", -- Peon oki doki
+		["quest_failed"] = 6240, --"Interface\\AddOns\\SmartQuest\\Sounds\\quest_failed.ogg", -- peasant doh
+		["quest_failed_group"] = 6191, -- "Interface\\AddOns\\SmartQuest\\Sounds\\quest_failed_group.ogg", -- peon no time for play
 	};
 };
 
 SmartQuestOptions = { };
-
-if (select(4, GetBuildInfo()) > 100200) then
+local wow_version, wow_build, wow_build_date, wow_toc = GetBuildInfo()
+if wow_toc > 100200 then
 	SmartQuest.BetaMode = true;
 end
-if (select(4, GetBuildInfo()) >= 100000) then
+if wow_toc >= 100000 then
 	SmartQuest.DragonflightMode = true;
 end
-if (select(4, GetBuildInfo()) < 80000) then
+if wow_toc < 80000 then
 	SmartQuest.ClassicMode = true;
+end
+
+local function Play(sound, channel, ...)
+	local willPlay, soundHandle
+	if tonumber(sound) then
+		willPlay, soundHandle = PlaySound(tonumber(sound), channel, ...)
+	elseif type(sound) == "string" then
+		willPlay, soundHandle = PlaySoundFile(sound, channel, ...)
+	end
+	return willPlay, soundHandle
 end
 
 function SmartQuest_ResetDefaults()
@@ -109,7 +119,7 @@ end
 SmartQuest_ResetDefaults();
 
 function SmartQuest_OnEvent(self, event, ...)
-	if (event == "VARIABLES_LOADED") then
+	if (event == "ADDON_LOADED") and ... == addonName then
 		SmartQuest_QuestScan(false);
 		C_ChatInfo.RegisterAddonMessagePrefix(SmartQuest.ModCode);
 		SmartQuest_DebugPrint("SmartQuest Variables loaded.");
@@ -436,7 +446,7 @@ end
 
 function SmartQuest_OnLoad()
 	SmartQuestFrame:RegisterEvent("CHAT_MSG_ADDON");
-	SmartQuestFrame:RegisterEvent("VARIABLES_LOADED");
+	SmartQuestFrame:RegisterEvent("ADDON_LOADED");
 	SmartQuest_ChatPrint("SmartQuest v"..SmartQuest.Version.." loaded.");
 
 	SlashCmdList["SQ"] = SmartQuest_Command;
@@ -505,56 +515,89 @@ function SmartQuest_Command_Sound()
 	SmartQuest_SaveSettings();
 end
 
+local batchMySound = {}
+local batchPartySound = {}
+function SmartQuest_SoundTicker()
+	if SmartQuest.Setting.MySound or SmartQuest.Setting.PartySound then
+		SmartQuest.soundTicker = SmartQuest.soundTicker or C_Timer.NewTicker(SmartQuest.Setting.SoundIgnore, function()
+			-- mine
+			if batchMySound.quest_done then
+				batchMySound.item=nil
+				batchMySound.objective=nil
+				batchMySound.quest_done=nil
+				Play(SmartQuest.Sound.quest_done, "Master")
+			end
+			if batchMySound.item then
+				batchMySound.item=nil
+				Play(SmartQuest.Sound.item, "Master")
+			end
+			if batchMySound.objective then
+				batchMySound.objective=nil
+				Play(SmartQuest.Sound.objective, "Master")
+			end
+			if batchMySound.quest_failed then
+				batchMySound.quest_failed=nil
+				Play(SmartQuest.Sound.quest_failed, "Master")
+			end
+			-- party
+			if batchPartySound.quest_done_group then
+				batchPartySound.objective_group = nil
+				batchPartySound.item_group = nil
+				batchPartySound.quest_done_group = nil
+				Play(SmartQuest.Sound.quest_done_group, "Master")
+			end
+			if batchPartySound.item_group then
+				batchPartySound.item_group = nil
+				Play(SmartQuest.Sound.item_group, "Master")
+			end
+			if batchPartySound.objective_group then
+				batchPartySound.objective_group = nil
+				Play(SmartQuest.Sound.objective_group, "Master")
+			end
+			if batchPartySound.quest_failed_group then
+				batchPartySound.quest_failed_group = nil
+				Play(SmartQuest.Sound.quest_failed_group, "Master")
+			end
+		end)
+	else
+		if SmartQuest.soundTicker then
+			SmartQuest.soundTicker:Cancel()
+		end
+	end
+end
+
 function SmartQuest_PlayMySound(sSound)
 	if (SmartQuest.Setting.MySound) then
-		local playSound = nil;
-		
+		local now = GetTime()
 		if (sSound == "objective" and SmartQuest.Setting.MySoundObjective) then
-			playSound = true;
+			batchMySound[sSound]=now
 		end
 		if (sSound == "item" and SmartQuest.Setting.MySoundItem) then
-			playSound = true;
+			batchMySound[sSound]=now
 		end
 		if (sSound == "quest_done" and SmartQuest.Setting.MySoundDone) then
-			playSound = true;
+			batchMySound[sSound]=now
 		end
 		if (sSound == "quest_failed" and SmartQuest.Setting.MySoundFailed) then
-			playSound = true;
-		end
-	
-		if (playSound) then
-			local currentTime = GetTime();
-			if ((SmartQuest.Data.SoundTimers[sSound] or 0) <= currentTime) then
-				SmartQuest.Data.SoundTimers[sSound] = currentTime + SmartQuest.Setting.SoundIgnore;
-				PlaySoundFile(SmartQuest.Sound[sSound], "Master");
-			end
+			batchMySound[sSound]=now
 		end
 	end
 end
 
 function SmartQuest_PlayPartySound(sSound)
 	if (SmartQuest.Setting.PartySound) then
-		local playSound = nil;
-	
+		local now = GetTime();
 		if (sSound == "objective_group" and SmartQuest.Setting.PartySoundObjective) then
-			playSound = true;
+			batchPartySound[sSound]=now
 		end
 		if (sSound == "item_group" and SmartQuest.Setting.PartySoundItem) then
-			playSound = true;
+			batchPartySound[sSound]=now
 		end
 		if (sSound == "quest_done_group" and SmartQuest.Setting.PartySoundDone) then
-			playSound = true;
+			batchPartySound[sSound]=now
 		end
 		if (sSound == "quest_failed_group" and SmartQuest.Setting.PartySoundFailed) then
-			playSound = true;
-		end
-		
-		if (playSound) then
-			local currentTime = GetTime();
-			if ((SmartQuest.Data.SoundTimers[sSound] or 0) <= currentTime) then
-				SmartQuest.Data.SoundTimers[sSound] = currentTime + SmartQuest.Setting.SoundIgnore;
-				PlaySoundFile(SmartQuest.Sound[sSound], "Master");
-			end
+			batchPartySound[sSound]=now
 		end
 	end
 end
@@ -1090,6 +1133,7 @@ function SmartQuest_SaveSettings()
 	if (SmartQuest.UIRendered) then
 		SmartQuestOptions.Setting[SmartQuest.Data.Me].ChatFrameId = SmartQuest.Setting.ChatFrameId;
 	end
+	SmartQuest_SoundTicker();
 end
 
 function SmartQuest_Option_MonitorTextTest()
@@ -1101,41 +1145,41 @@ function SmartQuest_Option_MonitorTextTest()
 end
 
 function SmartQuest_Option_MySoundItemTest()
-	PlaySoundFile(SmartQuest.Sound["item"], "Master");
+	Play(SmartQuest.Sound["item"], "Master");
 	SmartQuest_CommPrint("[SQ] Played sound: My Quest Item Collected");
 end
 
 function SmartQuest_Option_MySoundObjectiveTest()
-	PlaySoundFile(SmartQuest.Sound["objective"], "Master");
+	Play(SmartQuest.Sound["objective"], "Master");
 	SmartQuest_CommPrint("[SQ] Played sound: My Quest Objective Completed");
 end
 
 function SmartQuest_Option_MySoundDoneTest()
-	PlaySoundFile(SmartQuest.Sound["quest_done"], "Master");
+	Play(SmartQuest.Sound["quest_done"], "Master");
 	SmartQuest_CommPrint("[SQ] Played sound: My Quest Completed");
 end
 
 function SmartQuest_Option_MySoundFailedTest()
-	PlaySoundFile(SmartQuest.Sound["quest_failed"], "Master");
+	Play(SmartQuest.Sound["quest_failed"], "Master");
 	SmartQuest_CommPrint("[SQ] Played sound: My Quest Failed");
 end
 
 function SmartQuest_Option_PartySoundItemTest()
-	PlaySoundFile(SmartQuest.Sound["item_group"], "Master");
+	Play(SmartQuest.Sound["item_group"], "Master");
 	SmartQuest_CommPrint("[SQ] Played sound: Party Quest Item Collected");
 end
 
 function SmartQuest_Option_PartySoundObjectiveTest()
-	PlaySoundFile(SmartQuest.Sound["objective_group"], "Master");
+	Play(SmartQuest.Sound["objective_group"], "Master");
 	SmartQuest_CommPrint("[SQ] Played sound: Party Quest Objective Completed");
 end
 
 function SmartQuest_Option_PartySoundDoneTest()
-	PlaySoundFile(SmartQuest.Sound["quest_done_group"], "Master");
+	Play(SmartQuest.Sound["quest_done_group"], "Master");
 	SmartQuest_CommPrint("[SQ] Played sound: Party Quest Completed");
 end
 
 function SmartQuest_Option_PartySoundFailedTest()
-	PlaySoundFile(SmartQuest.Sound["quest_failed_group"], "Master");
+	Play(SmartQuest.Sound["quest_failed_group"], "Master");
 	SmartQuest_CommPrint("[SQ] Played sound: Party Quest Failed");
 end
