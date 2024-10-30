@@ -37,7 +37,7 @@ SmartQuest = {
 	--
 	-- **********************************************************************************************
 
-	Version = "1.26";
+	Version = "1.27";
 	ModCode = "KSQ";
 	DataCode = "1";
 	Quest = { };
@@ -745,8 +745,12 @@ function SmartQuest_Command(arg1)
 end
 
 function SmartQuest_Command_Options()
-	InterfaceOptionsFrame_OpenToCategory("SmartQuest");
-	InterfaceOptionsFrame_OpenToCategory("SmartQuest"); -- Do it twice because first time you load up, it doesn't work
+	if _G.InterfaceOptionsFrame_OpenToCategory then
+		InterfaceOptionsFrame_OpenToCategory(addonName);
+		InterfaceOptionsFrame_OpenToCategory(addonName); -- Do it twice because first time you load up, it doesn't work
+	elseif Settings and Settings.OpenToCategory then
+		Settings.OpenToCategory(addon.settingsCategory.ID)
+	end
 	SmartQuest_Option_SetChatFrameIdText(SmartQuest.Setting.ChatFrameId); -- Refresh title in case it changed or first logging in
 end
 
@@ -793,11 +797,11 @@ function SmartQuest.ToggleCheckboxOption(self)
 end
 
 function SmartQuest_RenderOptions()
-	SmartQuest.UIRendered = true;
-	
+	if SmartQuest.UIRendered then
+		return;
+	end
 	local ConfigurationPanel = CreateFrame("FRAME","SmartQuest_MainFrame");
-	ConfigurationPanel.name = "SmartQuest";
-	InterfaceOptions_AddCategory(ConfigurationPanel);
+	ConfigurationPanel.name = addonName;
 
 	local IntroMessageHeader = ConfigurationPanel:CreateFontString(nil, "ARTWORK","GameFontNormalLarge");
 	IntroMessageHeader:SetPoint("TOPLEFT", 10, -10);
@@ -1017,6 +1021,19 @@ function SmartQuest_RenderOptions()
 			SmartQuest_ResetDefaults();
 			SmartQuest_SaveSettings();
 		end
+	ConfigurationPanel.OnCommit = ConfigurationPanel.okay
+	ConfigurationPanel.OnDefault = ConfigurationPanel.default
+	ConfigurationPanel.OnCancel = ConfigurationPanel.cancel
+
+	if _G.InterfaceOptions_AddCategory then
+		InterfaceOptions_AddCategory(ConfigurationPanel);
+	elseif Settings and Settings.RegisterCanvasLayoutCategory then
+		local cat = Settings.RegisterCanvasLayoutCategory(ConfigurationPanel, ConfigurationPanel.name)
+		addon.settingsCategory = cat
+		Settings.RegisterAddOnCategory(cat)
+		addon.settingsCategory.ID = addonName
+	end
+	SmartQuest.UIRendered = true;
 end
 
 function SmartQuest_Option_SetChatFrameId()
